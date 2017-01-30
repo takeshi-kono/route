@@ -15,6 +15,8 @@ const RE_ORIGIN = /^.+?\/\/+[^\/]+/,
   POPSTATE = 'popstate',
   HASHCHANGE = 'hashchange',
   TRIGGER = 'trigger',
+  DOCUMENT_ELEMENT = 'documentElement',
+  SCROLL_TO = 'scrollTo',
   MAX_EMIT_STACK_LEVEL = 3,
   win = typeof window != 'undefined' && window,
   doc = typeof document != 'undefined' && document,
@@ -69,9 +71,15 @@ function DEFAULT_SECOND_PARSER(path, filter) {
  */
 function debounce(fn, delay) {
   let t
-  return function () {
+  return function (event) {
     clearTimeout(t)
-    t = setTimeout(fn, delay)
+    t = setTimeout(function () {
+      fn()
+      let state = event.state
+      if (state) {
+        win[SCROLL_TO](state.scrollLeft, state.scrollTop)
+      }
+    }, delay)
   }
 }
 
@@ -125,14 +133,14 @@ function getPathFromBase(href) {
     : (loc ? getPathFromRoot(href) : href || '').replace(base, '')
 }
 
-function emit(force) {
+function emit(force, href) {
   // the stack is needed for redirections
   const isRoot = emitStackLevel === 0
   if (MAX_EMIT_STACK_LEVEL <= emitStackLevel) return
 
   emitStackLevel++
   emitStack.push(function() {
-    const path = getPathFromBase()
+    const path = getPathFromBase(href)
     if (force || path !== current) {
       central[TRIGGER]('emit', path)
       current = path
@@ -187,14 +195,21 @@ function go(path, title, shouldReplace) {
 
   path = base + normalize(path)
   title = title || doc.title
-  // browsers ignores the second parameter `title`
-  shouldReplace
-    ? hist.replaceState(null, title, path)
-    : hist.pushState(null, title, path)
-  // so we need to set it manually
-  doc.title = title
   routeFound = false
-  emit()
+  emit(false, path)
+  if (routeFound) {
+    let state = {
+      scrollLeft: 0 + ((doc[DOCUMENT_ELEMENT] && doc[DOCUMENT_ELEMENT].scrollLeft) || doc.body.scrollLeft),
+      scrollTop:  0 + ((doc[DOCUMENT_ELEMENT] && doc[DOCUMENT_ELEMENT].scrollTop) || doc.body.scrollTop)
+    }
+    // browsers ignores the second parameter `title`
+    shouldReplace
+      ? hist.replaceState(state, title, path)
+      : hist.pushState(state, title, path)
+    // so we need to set it manually
+    doc.title = title
+    win[SCROLL_TO](0, 0)
+  }
   return routeFound
 }
 
